@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { WasteClassification, Location } from "../types";
 
@@ -7,7 +6,7 @@ You are EcoSort AI, a world-class sustainability and waste-sorting expert.
 
 Goal:
 Classify a waste item based on (1) its material properties and (2) the user's region/country.
-Current Location: ${loc.country || 'Global'}
+Current Location: ${loc.country || "Global"}
 
 Rules:
 1. Classify into standard categories: cardboard, paper, plastic, metal, glass, trash, or organic.
@@ -27,75 +26,134 @@ const RESPONSE_SCHEMA = {
   type: Type.OBJECT,
   properties: {
     item_detected: { type: Type.STRING },
-    material: { type: Type.STRING, enum: ['paper', 'plastic', 'glass', 'metal', 'organic', 'ewaste', 'hazardous', 'mixed', 'other'] },
+    material: {
+      type: Type.STRING,
+      enum: [
+        "paper",
+        "plastic",
+        "glass",
+        "metal",
+        "organic",
+        "ewaste",
+        "hazardous",
+        "mixed",
+        "other",
+      ],
+    },
     confidence: { type: Type.NUMBER },
     needs_followup: { type: Type.BOOLEAN },
     followup_question: { type: Type.STRING, nullable: true },
     location: {
       type: Type.OBJECT,
       properties: {
-        country: { type: Type.STRING }
+        country: { type: Type.STRING },
       },
-      required: ["country"]
+      required: ["country"],
     },
     bin_recommendation: {
       type: Type.OBJECT,
       properties: {
-        stream: { type: Type.STRING, enum: ['Recyclables', 'Residual', 'Organic', 'E-waste', 'Hazardous'] },
-        bin_color: { type: Type.STRING, enum: ['Blue', 'White', 'Green', 'Black', 'Brown', 'Yellow', 'Red', 'None'] },
-        instructions: { type: Type.ARRAY, items: { type: Type.STRING } }
+        stream: {
+          type: Type.STRING,
+          enum: ["Recyclables", "Residual", "Organic", "E-waste", "Hazardous"],
+        },
+        bin_color: {
+          type: Type.STRING,
+          enum: ["Blue", "White", "Green", "Black", "Brown", "Yellow", "Red", "None"],
+        },
+        instructions: { type: Type.ARRAY, items: { type: Type.STRING } },
       },
-      required: ["stream", "bin_color", "instructions"]
+      required: ["stream", "bin_color", "instructions"],
     },
-    why: { type: Type.ARRAY, items: { type: Type.STRING } }
+    why: { type: Type.ARRAY, items: { type: Type.STRING } },
   },
-  required: ["item_detected", "material", "confidence", "needs_followup", "location", "bin_recommendation", "why"],
+  required: [
+    "item_detected",
+    "material",
+    "confidence",
+    "needs_followup",
+    "location",
+    "bin_recommendation",
+    "why",
+  ],
 };
 
-export const classifyWaste = async (base64Image: string, location: Location): Promise<WasteClassification> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-  
+const getApiKey = (): string => {
+  // Vite exposes env vars via import.meta.env (only keys starting with VITE_)
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
+
+  if (!apiKey) {
+    throw new Error(
+      "Missing VITE_GEMINI_API_KEY. Add it in Netlify Environment Variables (or a local .env) and redeploy."
+    );
+  }
+
+  return apiKey;
+};
+
+const getAIClient = () => {
+  return new GoogleGenAI({ apiKey: getApiKey() });
+};
+
+export const classifyWaste = async (
+  base64Image: string,
+  location: Location
+): Promise<WasteClassification> => {
+  const ai = getAIClient();
+
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: "gemini-3-flash-preview",
       contents: {
         parts: [
-          { inlineData: { data: base64Image, mimeType: 'image/jpeg' } },
-          { text: generateSystemPrompt(location) + "\nClassify this item captured in the photo." }
-        ]
+          { inlineData: { data: base64Image, mimeType: "image/jpeg" } },
+          {
+            text:
+              generateSystemPrompt(location) +
+              "\nClassify this item captured in the photo.",
+          },
+        ],
       },
       config: {
         responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA
-      }
+        responseSchema: RESPONSE_SCHEMA,
+      },
     });
 
-    return JSON.parse(response.text || '{}') as WasteClassification;
+    return JSON.parse(response.text || "{}") as WasteClassification;
   } catch (error) {
     console.error("Gemini Error:", error);
     throw new Error("Failed to classify item.");
   }
 };
 
-export const searchWasteLookup = async (query: string, location: Location): Promise<WasteClassification> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-  
+export const searchWasteLookup = async (
+  query: string,
+  location: Location
+): Promise<WasteClassification> => {
+  const ai = getAIClient();
+
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: "gemini-3-flash-preview",
       contents: `${generateSystemPrompt(location)}\n\nInput: Item name: "${query}"`,
       config: {
         tools: [{ googleSearch: {} }],
         responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA
-      }
+        responseSchema: RESPONSE_SCHEMA,
+      },
     });
 
-    const result = JSON.parse(response.text || '{}') as WasteClassification;
-    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+    const result = JSON.parse(response.text || "{}") as WasteClassification;
+
+    const chunks =
+      response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+
     if (chunks) {
-        result.sources = chunks.map((c: any) => c.web).filter(Boolean);
+      // Keep your original logic; some chunks may not include web links
+      result.sources = chunks.map((c: any) => c.web).filter(Boolean);
     }
+
     return result;
   } catch (error) {
     console.error("Gemini Search Error:", error);
