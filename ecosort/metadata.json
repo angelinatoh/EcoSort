@@ -1,0 +1,7 @@
+{
+  "name": "EcoSort",
+  "description": "A smart waste sorting assistant that uses Gemini Vision to classify household items into the correct recycling, compost, or waste bins.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
